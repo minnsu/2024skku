@@ -1,5 +1,5 @@
-numpy
-gymnasium
-torch
-torchvision
-matplotlib
+numpy==1.26.4
+gymnasium==0.29.1
+torch==2.3.0
+torchvision==0.18.0
+matplotlib==3.9.0
