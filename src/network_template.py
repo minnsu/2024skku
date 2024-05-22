@@ -14,4 +14,3 @@ class Network(nn.Module):
 
     def forward(self, x):
         raise NotImplementedError
-    

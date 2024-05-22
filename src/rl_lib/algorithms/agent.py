@@ -9,3 +9,6 @@ class Agent:
     
     def step(self, states, actions, rewards, next_states, dones, step):
         raise NotImplementedError
+    
+    def train(self):
+        raise NotImplementedError

@@ -1,11 +1,10 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from copy import deepcopy
 
-from rl_algorithms.agent import Agent
-from rl_algorithms.replay_buffer import ReplayBuffer
+from rl_lib.algorithms.agent import Agent
+from rl_lib.utils.buffer import Buffer
 
 class DQN(Agent):
     """
@@ -20,6 +19,7 @@ class DQN(Agent):
         "batch_size": int,
         "eps": float,
         "eps_decay": float,
+        "eps_decay_freq": int,
         "min_eps": float,
         "n_step": int,
         "replay_buffer_size": int,
@@ -33,19 +33,20 @@ class DQN(Agent):
         self._batch_size = configs["batch_size"]
         self._n_step = configs["n_step"]
         
-        self._replay_buffer = ReplayBuffer(configs["replay_buffer_size"], self._n_step, self._gamma)
+        self._replay_buffer = Buffer(configs["replay_buffer_size"], self._n_step, self._gamma)
         
         self._target_network_update_freq = configs["target_network_update_freq"]
         self._training_freq = configs["training_freq"]
         
         self._eps = configs["eps"]
         self._eps_decay = configs["eps_decay"]
+        self._eps_decay_freq = configs["eps_decay_freq"]
         self._min_eps = configs["min_eps"]
         
         self._target_network = deepcopy(network)
     
-    def select_action(self, states):
-        if np.random.rand() < self._eps:
+    def select_action(self, states, test=False):
+        if not test and np.random.rand() < self._eps:
             return np.random.randint(self._network._action_dim)
 
         states = torch.tensor(states, dtype=torch.float32)
@@ -57,13 +58,14 @@ class DQN(Agent):
         
         if step % self._training_freq == 0 and len(self._replay_buffer) >= self._batch_size:
             self.train()
-            self.eps = max(self._min_eps, self._eps - self._eps_decay)
         if step % self._target_network_update_freq == 0:
             del self._target_network
             self._target_network = deepcopy(self._network)
+        if step % self._eps_decay_freq == 0:
+            self.eps = max(self._min_eps, self._eps * self._eps_decay)
     
     def train(self):
-        states, actions, rewards, next_states, dones = self._replay_buffer.sample(self._batch_size)
+        states, actions, rewards, next_states, dones = self._replay_buffer.sample_batch(self._batch_size)
 
         states = torch.tensor(states, dtype=torch.float32)
         actions = torch.tensor(actions, dtype=torch.int64)
@@ -76,8 +78,6 @@ class DQN(Agent):
         target_values = rewards + self._gamma * next_q_values * (1 - dones)
 
         self._optimizer.zero_grad()
-
         loss = F.mse_loss(q_values, target_values)
         loss.backward()
-
         self._optimizer.step()

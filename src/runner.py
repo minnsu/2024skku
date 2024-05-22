@@ -1,7 +1,7 @@
 import numpy as np
 
-from rl_algorithms.agent import Agent
-from utils.env_wrapper import EnvWrapper
+from rl_lib.algorithms.agent import Agent
+from rl_lib.utils.env_wrapper import EnvWrapper
 
 class Runner:
     def __init__(self, env: EnvWrapper, agent: Agent, seed: int=None):
@@ -71,6 +71,8 @@ class Runner:
 
     def test(self, n_episodes: int):
         total_rewards = 0
+        max_rewards = -np.inf
+        min_rewards = np.inf
         for i in range(n_episodes):
             state = self._env.reset()
             
@@ -86,5 +88,29 @@ class Runner:
                 step += 1
 
             total_rewards += epi_rewards
+            max_rewards = max(max_rewards, epi_rewards)
+            min_rewards = min(min_rewards, epi_rewards)
             print(f"Episode {i} rewards: {epi_rewards}, steps: {step}")
-        print(f"Average rewards: {total_rewards / n_episodes}")
+        print(f"Average rewards: {total_rewards / n_episodes}, Max rewards: {max_rewards}, Min rewards: {min_rewards}")
+
+    def visualize(self, env):
+        """
+        Visualize the agent's performance.
+
+        arguments:
+        - env: EnvWrapper, environment -> should be initialized with render_mode="human" like EnvWrapper(gym.make("CartPole-v1", render_mode="human"))
+        """
+        total_rewards = 0
+        self._env = env
+        
+        state = self._env.reset()
+        done = False
+        while not done:
+            self._env.render()
+            action = self._agent.select_action(state, test=True)
+            next_state, reward, done, _ = self._env.step(action)
+
+            state = next_state
+            total_rewards += reward
+
+        print(f"Total rewards: {total_rewards}")

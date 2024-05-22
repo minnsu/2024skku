@@ -18,5 +18,5 @@ class EnvWrapper:
             next_state = np.array(next_state[0])
         return next_state, reward, done, info
     
-    def render(self, *args):
-        self._env.render(*args)
+    def render(self):
+        self._env.render()
