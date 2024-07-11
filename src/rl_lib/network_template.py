@@ -6,39 +6,43 @@ class DQNNetworkTemplate(nn.Module):
     def __init__(self, state_dim, action_dim) -> None:
         super(DQNNetworkTemplate, self).__init__()
 
-        self.net = nn.Sequential(
+        self._q_values = nn.Sequential(
             nn.Linear(state_dim, 64),
             nn.ReLU(),
             nn.Linear(64, action_dim)
         )
     
     def forward(self, states):
-        return self.net(states)
+        return self._q_values(states)
 
-class DDPGNetworkTemplate(nn.Module):
+class SACNetworkTemplate(nn.Module):
     def __init__(self, state_dim, action_dim) -> None:
-        super(DDPGNetworkTemplate, self).__init__()
+        super(SACNetworkTemplate, self).__init__()
 
-        self.actor_net = nn.Sequential(
+        self._actor = nn.Sequential(
             nn.Linear(state_dim, 64),
             nn.ReLU(),
-            nn.Linear(64, action_dim),
-            nn.Tanh()
+            nn.Linear(64, action_dim * 2)
         )
 
-        self.critic_net = nn.Sequential(
+        self._critic = nn.Sequential(
             nn.Linear(state_dim + action_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 1)
         )
     
-    def actor(self, states):
-        return self.actor_net(states)
+    def action_log_prob(self, states):
+        action_mean, action_log_std = self._actor(states).chunk(2, dim=-1)
+        action_std = torch.exp(action_log_std)
+        
+        # using reparametrization trick
+        action = action_mean + action_std * torch.randn_like(action_mean)
+        action_log_prob = torch.distributions.Normal(action_mean, action_std).log_prob(action).sum(dim=-1)
+
+        return action, action_log_prob
     
     def critic(self, states, actions):
-        return self.critic_net(torch.cat([states, actions], dim=1))
-    
+        return self._critic(torch.cat([states, actions], dim=-1))
+
     def forward(self, states):
-        action = self.actor(states)
-        q_value = self.critic(states, action)
-        return action, q_value
+        return self.action_log_prob(states), self.critic(states)

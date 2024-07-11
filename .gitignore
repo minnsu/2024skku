@@ -1,3 +1,4 @@
 /env
 /src/legacy
+/src/stable-baselines3
 **/__pycache__
