@@ -111,5 +111,59 @@ class SAC:
                     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 class PPO:
-    def __init__(self):
-        pass
+    def __init__(self, network, optimizer, gamma, batch_size, buffer_size, update_freq, clip_ratio=0.2, ent_coef=0.01, vf_coef=0.5, max_grad_norm=None):
+        self.network = network
+        self.optimizer = optimizer
+        
+        self.batch_size = batch_size
+
+        self.replay_buffer = ReplayBuffer(buffer_size, gamma, self.batch_size, use_log_prob=True)
+        self.gamma = gamma
+        self.clip_ratio = clip_ratio
+        self.ent_coef = ent_coef
+        self.vf_coef = vf_coef
+        self.max_grad_norm = max_grad_norm
+
+    def select_action(self, states):
+        states = torch.tensor(states, dtype=torch.float32)
+        actions, _ = self.network.action_log_prob(states)
+        return actions.detach().numpy()
+    
+    def train(self, step):
+        states, actions, rewards, next_states, dones, log_probs = self.replay_buffer.sample()
+        
+        states = torch.tensor(states, dtype=torch.float32)
+        actions = torch.tensor(actions, dtype=torch.float32)
+        rewards = torch.tensor(rewards, dtype=torch.float32)
+        next_states = torch.tensor(next_states, dtype=torch.float32)
+        dones = torch.tensor(dones, dtype=torch.float32)
+        log_probs_old = torch.tensor(log_probs, dtype=torch.float32)
+
+        _, log_prob = self.network.action_log_prob(states)
+        log_prob = log_prob.reshape(-1, 1)
+
+        with torch.no_grad():
+            next_values = self.network.critic(next_states, self.network.actor(next_states))
+            target_values = rewards + self.gamma * next_values * (1 - dones)
+        
+        values = self.network.critic(states, actions)
+
+        advantages = target_values - values
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        ratio = torch.exp(log_prob - log_probs_old)
+
+        actor_loss = -torch.min(ratio * advantages, torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * advantages).mean()
+        critic_loss = F.mse_loss(values, target_values)
+
+        entropy = -log_prob.mean()
+
+        loss = actor_loss + self.vf_coef * critic_loss - self.ent_coef * entropy
+
+        self.optimizer.zero_grad()
+
+        loss.backward()
+        if self.max_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
+
+        self.optimizer.step()
