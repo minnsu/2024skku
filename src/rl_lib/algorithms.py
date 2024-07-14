@@ -14,8 +14,8 @@ class DQN:
         
         self.batch_size = batch_size
 
-        self.replay_buffer = ReplayBuffer(buffer_size, self.n_step, gamma, self.batch_size)
         self.n_step = n_step
+        self.replay_buffer = ReplayBuffer(buffer_size, self.n_step, gamma, self.batch_size)
         self.gamma = gamma
         self.update_freq = update_freq
 
@@ -64,13 +64,15 @@ class SAC:
         self.batch_size = batch_size
 
         self.replay_buffer = ReplayBuffer(buffer_size, 1, gamma, self.batch_size)
-        self.gamma = tau = tau
+        self.gamma = gamma
+        self.tau = tau
         self.ent_coef = ent_coef
+        self.update_freq = update_freq
 
     def select_action(self, states):
         states = torch.tensor(states, dtype=torch.float32)
         actions, _ = self.network.action_log_prob(states)
-        return actions.detach().numpy()
+        return actions.cpu().detach().numpy()
     
     def train(self, step):
         states, actions, rewards, next_states, dones = self.replay_buffer.sample()
@@ -117,7 +119,7 @@ class PPO:
         
         self.batch_size = batch_size
 
-        self.replay_buffer = ReplayBuffer(buffer_size, gamma, self.batch_size, use_log_prob=True)
+        self.replay_buffer = ReplayBuffer(buffer_size, 1, gamma, self.batch_size, use_log_prob=True)
         self.gamma = gamma
         self.clip_ratio = clip_ratio
         self.ent_coef = ent_coef
@@ -126,8 +128,8 @@ class PPO:
 
     def select_action(self, states):
         states = torch.tensor(states, dtype=torch.float32)
-        actions, _ = self.network.action_log_prob(states)
-        return actions.detach().numpy()
+        actions, log_probs = self.network.action_log_prob(states)
+        return actions.cpu().detach().numpy(), log_probs.cpu().detach().numpy()
     
     def train(self, step):
         states, actions, rewards, next_states, dones, log_probs = self.replay_buffer.sample()

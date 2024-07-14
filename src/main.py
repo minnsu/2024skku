@@ -13,72 +13,66 @@ import gymnasium as gym
 np.random.seed(0)
 torch.manual_seed(0)
 
-from rl_lib.algorithms import DQN
+from rl_lib.agents import DQNAgent, SACAgent, PPOAgent
 
 
+env = gym.make("MountainCarContinuous-v0")
 
+class PPONetworkTemplate(nn.Module):
+    def __init__(self, state_dim, action_dim) -> None:
+        super(PPONetworkTemplate, self).__init__()
 
-env = gym.make("CartPole-v1")
-network = nn.Sequential(
-    nn.Linear(4, 64),
-    nn.ReLU(),
-    nn.Linear(64, 2)
-)
-configs = {
-    "network": network,
-    "lr": 0.001,
-    "gamma": 0.95,
-    "batch_size": 32,
-    "n_step": 1,
-    "replay_buffer_size": 10000,
-    "update_freq": 100
-}
-agent = DQN(**configs)
+        self._actor = nn.Sequential(
+            nn.Linear(state_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, action_dim * 2)
+        )
 
-eps = 0.5
-
-rewards = 0
-for episode in range(1, 201):
-    state = env.reset()
-    done = False
-
-    cur_step = 0
-    while cur_step <= 300 and not done:
-        if type(state) == tuple:
-            state = state[0]
-
-        if np.random.rand() < eps:
-            action = np.random.randint(2)
-        else:
-            action = agent.select_action(state)
-        next_state, reward, done, _, _ = env.step(action)
-        agent.replay_buffer.append(state, action, reward, next_state, done)
-        state = next_state
-
-        if len(agent.replay_buffer) >= agent.batch_size:
-            agent.train(cur_step)
-        
-        rewards += reward
-        cur_step += 1
+        self._critic = nn.Sequential(
+            nn.Linear(state_dim + action_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
     
-    if episode % 10 == 0:
-        print(f"Episode: {episode}, Avg Reward: {rewards / 10}")
-        rewards = 0
-        eps = max(0.1, eps * 0.99)
-        if np.random.rand() < 0.1:
-            eps = 0.5
+    def action_log_prob(self, states):
+        if states.shape == (2, 1):
+            states = states.reshape(2)
+        action_mean, action_log_std = self._actor(states).chunk(2, dim=-1)
+        action_log_std = torch.clamp(action_log_std, -5, 0.5)
+        action_std = torch.exp(action_log_std)
+        
+        # using reparametrization trick
+        action = action_mean + action_std * torch.randn_like(action_mean)
+        action_log_prob = torch.distributions.Normal(action_mean, action_std).log_prob(action).sum(dim=-1)
 
+        return action, action_log_prob
+    
+    def actor(self, states):
+        return self.action_log_prob(states)[0]
+
+    def critic(self, states, actions):
+        return self._critic(torch.cat([states, actions], dim=-1))
+
+    def forward(self, states):
+        return self.action_log_prob(states), self.critic(states)
+    
+network = PPONetworkTemplate(env.observation_space.shape[0], env.action_space.shape[0])
+configs = {
+    "env": env,
+    "network": network,
+    "optimizer": torch.optim.Adam(network.parameters(), lr=1e-3),
+    "gamma": 0.99,
+    "batch_size": 32,
+    "buffer_size": 10000,
+    "update_freq": 100,
+    "ent_coef": 0.2,
+    "vf_coef": 0.5,
+    "clip_ratio": 0.05,
+}
+
+agent = PPOAgent(**configs)
+agent.train(200, max_steps=1000)
 env.close()
-env = gym.make("CartPole-v1", render_mode="human")
 
-state = env.reset()
-done = False
-cur_step = 0
-while not done:
-    if type(state) == tuple:
-        state = state[0]
-    action = agent.select_action(state)
-    state, reward, done, _, _ = env.step(action)
-    env.render()
-    print(cur_step, reward, end="\r")
-    cur_step += 1
+env = gym.make("MountainCarContinuous-v0", render_mode="human")
+agent.evaluate(env)
